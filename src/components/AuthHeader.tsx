@@ -44,7 +44,7 @@ export function AuthHeader() {
       </span>
       <button
         type="button"
-        onClick={() => signOut({ redirectTo: "/" })}
+        onClick={() => signOut({ redirectTo: "/login" })}
         className="text-sm text-slate-500 hover:text-slate-800"
       >
         Sign out

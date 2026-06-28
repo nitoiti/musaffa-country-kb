@@ -8,20 +8,12 @@ import type {
   TransactionDirection,
 } from "@/types/fee-profiles";
 import { getBankMethodFees } from "@/lib/fee-profiles";
+import { FALLBACK_RATES_TO_USD } from "@/lib/fx-rates";
 
 const ACCOUNT_CCY = "USD";
 
-/** Snapshot date for hard-coded indicative FX — not a live feed */
+/** @deprecated Use exchange rate API date instead — kept for fallback display */
 export const FX_RATES_AS_OF = "2025-06-01";
-
-const FX_RATES: Record<string, number> = {
-  EUR: 1.08,
-  CHF: 1.12,
-  SEK: 0.096,
-  AED: 0.27,
-  SGD: 0.74,
-  GBP: 1.27,
-};
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
@@ -46,7 +38,7 @@ export function formatUsd(amount: number): string {
 
 function fxRate(profile: CountryFeeProfile, transferCcy: string): number {
   if (transferCcy === ACCOUNT_CCY) return 1;
-  return profile.fxRateToUsd ?? FX_RATES[transferCcy] ?? 1;
+  return profile.fxRateToUsd ?? FALLBACK_RATES_TO_USD[transferCcy] ?? 1;
 }
 
 /** Suggested extra USD on withdraw when FX applies — settlement rate may differ from estimate */
@@ -158,7 +150,7 @@ function isSwiftMethod(methodId: string): boolean {
 export function calculateProfileFees(
   input: FeeCalculationInput,
 ): FeeCalculationResult | null {
-  const { profile, methodId, bankId, direction, amount, commissionBearer, receiveCurrency: receiveCurrencyInput } =
+  const { profile, methodId, bankId, direction, amount, commissionBearer, receiveCurrency: receiveCurrencyInput, exchangeRate: liveRate, exchangeRateDate, exchangeRateSource } =
     input;
   const method = profile.methods.find((m) => m.id === methodId);
   const bank = profile.banks.find((b) => b.id === bankId);
@@ -177,7 +169,7 @@ export function calculateProfileFees(
     return null;
   }
 
-  const rate = fxRate(profile, transferCcy);
+  const rate = liveRate ?? fxRate(profile, transferCcy);
   const fxSpread = needsFx(transferCcy) ? bankFees.fxSpreadPercent : 0;
   const brokerFee = brokerFeeForMethod(profile, methodId, direction);
   const ccFee = profile.alpaca.currencyCloudFee;
@@ -201,16 +193,46 @@ export function calculateProfileFees(
     swiftFee,
     methodNotes: bankFees.notes,
     direction,
+    exchangeRateDate,
+    exchangeRateSource,
   };
 
+  const exchangeRateInfo =
+    needsFx(transferCcy) && exchangeRateDate && exchangeRateSource
+      ? {
+          from: transferCcy,
+          to: ACCOUNT_CCY,
+          rate,
+          date: exchangeRateDate,
+          source: exchangeRateSource,
+        }
+      : needsFx(transferCcy)
+        ? {
+            from: transferCcy,
+            to: ACCOUNT_CCY,
+            rate,
+            date: FX_RATES_AS_OF,
+            source: "fallback" as const,
+          }
+        : undefined;
+
+  const attachMeta = (result: FeeCalculationResult): FeeCalculationResult => ({
+    ...result,
+    exchangeRateInfo,
+  });
+
   if (direction === "deposit") {
-    return commissionBearer === "sender"
-      ? calcDepositSenderPays(ctx)
-      : calcDepositReceiverPays(ctx);
+    return attachMeta(
+      commissionBearer === "sender"
+        ? calcDepositSenderPays(ctx)
+        : calcDepositReceiverPays(ctx),
+    );
   }
-  return commissionBearer === "sender"
-    ? calcWithdrawSenderPays(ctx)
-    : calcWithdrawReceiverPays(ctx);
+  return attachMeta(
+    commissionBearer === "sender"
+      ? calcWithdrawSenderPays(ctx)
+      : calcWithdrawReceiverPays(ctx),
+  );
 }
 
 interface CalcCtx {
@@ -228,6 +250,8 @@ interface CalcCtx {
   swiftFee: number;
   methodNotes?: string;
   direction: TransactionDirection;
+  exchangeRateDate?: string;
+  exchangeRateSource?: "frankfurter" | "fallback";
 }
 
 function brokerFeeStep(ctx: CalcCtx): FlowStep {
@@ -294,31 +318,44 @@ function solveUserSendsForDepositTarget(
   return userSends;
 }
 
-function fxRateDetail(spread: number, rate: number, toCcy: string): string {
+function fxRateDetail(
+  spread: number,
+  rate: number,
+  toCcy: string,
+  ctx: Pick<CalcCtx, "exchangeRateDate" | "exchangeRateSource">,
+): string {
   const pct = (spread * 100).toFixed(2);
-  const asOf = new Date(FX_RATES_AS_OF).toLocaleDateString("en-US", {
+  const dateStr = ctx.exchangeRateDate ?? FX_RATES_AS_OF;
+  const asOf = new Date(dateStr + "T12:00:00").toLocaleDateString("en-US", {
     month: "short",
+    day: "numeric",
     year: "numeric",
   });
+  const rateType =
+    ctx.exchangeRateSource === "frankfurter"
+      ? "average market rate"
+      : "estimated rate";
   if (spread > 0) {
-    return `1 ${toCcy} = ${formatUsd(rate)} · bank markup ${pct}% · indicative FX snapshot (${asOf})`;
+    return `1 ${toCcy} = ${formatUsd(rate)} (${rateType}, ${asOf}) · bank markup ${pct}%`;
   }
-  return `1 ${toCcy} = ${formatUsd(rate)} · indicative FX snapshot (${asOf}), not live`;
+  return `1 ${toCcy} = ${formatUsd(rate)} (${rateType}, ${asOf})`;
 }
+
 function fxStepToUsd(
   fromAmount: number,
   fromCcy: string,
   toAmount: number,
   spread: number,
   rate: number,
+  ctx: Pick<CalcCtx, "exchangeRateDate" | "exchangeRateSource">,
 ): FlowStep {
   const spreadCost = round2(fromAmount * spread);
   return {
     kind: "fx_conversion",
-    label: `${fromCcy} → USD`,
+    label: `Currency conversion: ${fromCcy} → USD`,
     amount: toAmount,
     currency: ACCOUNT_CCY,
-    detail: fxRateDetail(spread, rate, fromCcy),
+    detail: fxRateDetail(spread, rate, fromCcy, ctx),
     isDeduction: false,
     feeDeduction:
       spread > 0 ? { amount: spreadCost, currency: fromCcy } : undefined,
@@ -331,14 +368,15 @@ function fxStepFromUsd(
   toAmount: number,
   spread: number,
   rate: number,
+  ctx: Pick<CalcCtx, "exchangeRateDate" | "exchangeRateSource">,
 ): FlowStep {
   const spreadCost = round2(usdAmount * spread);
   return {
     kind: "fx_conversion",
-    label: `USD → ${toCcy}`,
+    label: `Currency conversion: USD → ${toCcy}`,
     amount: toAmount,
     currency: toCcy,
-    detail: fxRateDetail(spread, rate, toCcy),
+    detail: fxRateDetail(spread, rate, toCcy, ctx),
     isDeduction: false,
     feeDeduction:
       spread > 0 ? { amount: spreadCost, currency: ACCOUNT_CCY } : undefined,
@@ -376,12 +414,12 @@ function calcDepositReceiverPays(ctx: CalcCtx): FeeCalculationResult {
   if (needsFx(transferCcy) && fxSpread > 0) {
     usdAfterConversion = convertLocalToUsd(localRemaining, fxSpread, rate);
     steps.push(
-      fxStepToUsd(localRemaining, transferCcy, usdAfterConversion, fxSpread, rate),
+      fxStepToUsd(localRemaining, transferCcy, usdAfterConversion, fxSpread, rate, ctx),
     );
   } else if (needsFx(transferCcy)) {
     usdAfterConversion = round2(localRemaining * rate);
     steps.push(
-      fxStepToUsd(localRemaining, transferCcy, usdAfterConversion, 0, rate),
+      fxStepToUsd(localRemaining, transferCcy, usdAfterConversion, 0, rate, ctx),
     );
   } else {
     usdAfterConversion = localRemaining;
@@ -505,7 +543,7 @@ function buildDepositSenderSteps(
 
   if (needsFx(transferCcy)) {
     const convertedUsd = convertLocalToUsd(running, fxSpread, rate);
-    steps.push(fxStepToUsd(running, transferCcy, convertedUsd, fxSpread, rate));
+    steps.push(fxStepToUsd(running, transferCcy, convertedUsd, fxSpread, rate, ctx));
     running = convertedUsd;
   }
 
@@ -582,7 +620,7 @@ function calcWithdrawReceiverPays(ctx: CalcCtx): FeeCalculationResult {
   if (needsFx(transferCcy)) {
     const localAmount = convertUsdToLocal(usdRemaining, fxSpread, rate);
     steps.push(
-      fxStepFromUsd(usdRemaining, transferCcy, localAmount, fxSpread, rate),
+      fxStepFromUsd(usdRemaining, transferCcy, localAmount, fxSpread, rate, ctx),
     );
     userReceives = localAmount;
     receiveCcy = transferCcy;
@@ -703,7 +741,7 @@ function calcWithdrawSenderPays(ctx: CalcCtx): FeeCalculationResult {
     const afterBroker = debitedUsd - usdFees(ctx);
     const localOut = convertUsdToLocal(afterBroker, fxSpread, rate);
     orderedSteps.push(
-      fxStepFromUsd(afterBroker, transferCcy, localOut, fxSpread, rate),
+      fxStepFromUsd(afterBroker, transferCcy, localOut, fxSpread, rate, ctx),
     );
   }
 

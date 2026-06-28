@@ -5,14 +5,14 @@ import {
   calculateProfileFees,
   currencySymbol,
   formatMoney,
-  FX_RATES_AS_OF,
   getFeeSummaryLines,
-  getIndicativeFxRate,
   getInputCurrency,
   getReceiveCurrencyOptions,
   getTransferCurrency,
 } from "@/lib/fee-calculator";
+import { ExchangeRateNotice } from "@/components/ExchangeRateNotice";
 import { FEE_SOURCE_LINKS } from "@/lib/fee-sources";
+import type { ExchangeRateResult } from "@/lib/fx-rates";
 import {
   getBanksForProfile,
   getFeeProfile,
@@ -45,6 +45,10 @@ export function FeeCalculator({ country }: { country: Country }) {
   const [methodId, setMethodId] = useState(defaultMethodId);
   const [bankId, setBankId] = useState("");
   const [receiveCurrency, setReceiveCurrency] = useState("");
+  const [exchangeRate, setExchangeRate] = useState<ExchangeRateResult | null>(
+    null,
+  );
+  const [exchangeRateLoading, setExchangeRateLoading] = useState(false);
 
   const banksForMethod = useMemo(
     () => banks.filter((b) => b.methods[methodId || defaultMethodId]),
@@ -86,6 +90,38 @@ export function FeeCalculator({ country }: { country: Country }) {
     }
   }, [resolvedMethodId, banks, bankId]);
 
+  const transferCcy = resolvedMethodId
+    ? getTransferCurrency(profile, resolvedMethodId)
+    : profile.currency;
+  const needsConversion = transferCcy !== "USD";
+
+  useEffect(() => {
+    if (!needsConversion) {
+      setExchangeRate(null);
+      setExchangeRateLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setExchangeRateLoading(true);
+
+    fetch(`/api/fx-rates?from=${transferCcy}&to=USD`)
+      .then((res) => (res.ok ? res.json() : Promise.reject()))
+      .then((data: ExchangeRateResult) => {
+        if (!cancelled) setExchangeRate(data);
+      })
+      .catch(() => {
+        if (!cancelled) setExchangeRate(null);
+      })
+      .finally(() => {
+        if (!cancelled) setExchangeRateLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [transferCcy, needsConversion]);
+
   const parsedAmount = parseFloat(amount) || 0;
 
   const inputCurrency = resolvedMethodId
@@ -111,6 +147,9 @@ export function FeeCalculator({ country }: { country: Country }) {
       bankId: resolvedBankId,
       profile,
       receiveCurrency: isTargetReceiveInput ? resolvedReceiveCurrency : undefined,
+      exchangeRate: exchangeRate?.rate,
+      exchangeRateDate: exchangeRate?.date,
+      exchangeRateSource: exchangeRate?.source,
     });
   }, [
     direction,
@@ -121,6 +160,7 @@ export function FeeCalculator({ country }: { country: Country }) {
     profile,
     isTargetReceiveInput,
     resolvedReceiveCurrency,
+    exchangeRate,
   ]);
 
   const banksForMethodSelect = useMemo(
@@ -145,13 +185,6 @@ export function FeeCalculator({ country }: { country: Country }) {
 
   const headline = result ? buildHeadline(result, direction) : null;
   const feeLines = result ? getFeeSummaryLines(result.steps) : [];
-  const transferCcy = resolvedMethodId
-    ? getTransferCurrency(profile, resolvedMethodId)
-    : profile.currency;
-  const fxInfo =
-    resolvedMethodId && transferCcy !== "USD"
-      ? getIndicativeFxRate(profile, transferCcy)
-      : null;
   const isLocalRail = resolvedMethodId.includes("local_rail") ||
     resolvedMethodId === "sepa_local_rail" ||
     resolvedMethodId === "remit";
@@ -306,6 +339,13 @@ export function FeeCalculator({ country }: { country: Country }) {
                 </p>
               </div>
 
+              {needsConversion && (
+                <ExchangeRateNotice
+                  rateInfo={result.exchangeRateInfo ?? exchangeRate}
+                  loading={exchangeRateLoading && !exchangeRate}
+                />
+              )}
+
               {result.withdrawAdvice && (
                 <WithdrawBufferCallout
                   targetReceive={result.netAmount}
@@ -358,11 +398,20 @@ export function FeeCalculator({ country }: { country: Country }) {
         </div>
       </div>
 
+      {needsConversion && !result && (
+        <div className="border-t border-slate-200 px-6 py-4">
+          <ExchangeRateNotice
+            rateInfo={exchangeRate}
+            loading={exchangeRateLoading}
+          />
+        </div>
+      )}
+
       <FeeSourcesPanel
         direction={direction}
         isLocalRail={isLocalRail}
         transferCcy={transferCcy}
-        fxInfo={fxInfo}
+        exchangeRate={exchangeRate}
         brokerFeeUsd={profile.alpaca.withdrawalLocalRailFee ?? profile.alpaca.withdrawalWireFee}
       />
     </div>
@@ -373,19 +422,21 @@ function FeeSourcesPanel({
   direction,
   isLocalRail,
   transferCcy,
-  fxInfo,
+  exchangeRate,
   brokerFeeUsd,
 }: {
   direction: TransactionDirection;
   isLocalRail: boolean;
   transferCcy: string;
-  fxInfo: ReturnType<typeof getIndicativeFxRate> | null;
+  exchangeRate: ExchangeRateResult | null | undefined;
   brokerFeeUsd: number;
 }) {
-  const fxAsOf = new Date(FX_RATES_AS_OF).toLocaleDateString("en-US", {
-    month: "long",
-    year: "numeric",
-  });
+  const rateDate = exchangeRate?.date
+    ? new Date(exchangeRate.date + "T12:00:00").toLocaleDateString("en-US", {
+        month: "long",
+        year: "numeric",
+      })
+    : null;
 
   return (
     <div className="border-t border-slate-200 bg-slate-50 px-6 py-4 text-xs leading-relaxed text-slate-600">
@@ -409,13 +460,13 @@ function FeeSourcesPanel({
             <SourceLink link={FEE_SOURCE_LINKS.alpacaFundingWallets} />
           </li>
         )}
-        {fxInfo && transferCcy !== "USD" && (
+        {exchangeRate && transferCcy !== "USD" && (
           <li>
-            <strong className="text-slate-700">FX rate:</strong>{" "}
-            Indicative snapshot — 1 {transferCcy} = ${fxInfo.rate.toFixed(4)} USD
-            (as of {fxAsOf}). This is <strong>not a live market feed</strong>; bank markups are
-            applied separately. Rates change daily — refresh the profile or verify before quoting
-            customers.
+            <strong className="text-slate-700">Exchange rate:</strong>{" "}
+            Average market rate — 1 {exchangeRate.from} = $
+            {exchangeRate.rate.toFixed(4)} USD
+            {rateDate && <> ({rateDate})</>}. Banks apply their own rate and markup
+            at settlement.
           </li>
         )}
         <li>
@@ -472,7 +523,7 @@ function WithdrawBufferCallout({
         account (fees on top).
       </p>
       <p className="mt-2 text-xs leading-relaxed text-amber-900/90">
-        The FX rate at settlement may differ from this estimate — the user could
+        The exchange rate at settlement may differ from this estimate — the user could
         land at {formatMoney(Math.max(0, targetReceive - 1), receiveCurrency)}{" "}
         or similar instead of the target. To protect an exact round amount, add{" "}
         <strong>

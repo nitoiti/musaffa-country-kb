@@ -3,7 +3,7 @@ export const FEE_SOURCE_LINKS = {
   alpacaFundingWallets: {
     label: "Alpaca — Funding Wallets FAQ",
     href: "https://alpaca.markets/support/funding-wallets-for-broker-api-2",
-    note: "Deposits to Funding Wallets are free. Withdrawals incur a fee that varies by payment rail (local_rails vs swift_wire). Non-USD transfers include FX conversion.",
+    note: "Deposits to Funding Wallets are free. Withdrawals incur a fee that varies by payment rail (local_rails vs swift_wire). Non-USD transfers include currency conversion.",
   },
   alpacaFundingWalletsDocs: {
     label: "Alpaca — Funding Wallets docs",

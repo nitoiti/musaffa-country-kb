@@ -80,6 +80,10 @@ export interface FeeCalculationInput {
   profile: CountryFeeProfile;
   /** Target currency user wants in their bank (withdraw + sender pays). Defaults to method transfer currency. */
   receiveCurrency?: string;
+  /** Live average rate: 1 transfer currency → USD (from /api/fx-rates) */
+  exchangeRate?: number;
+  exchangeRateDate?: string;
+  exchangeRateSource?: "frankfurter" | "fallback";
 }
 
 export interface FxWithdrawBufferAdvice {
@@ -107,4 +111,12 @@ export interface FeeCalculationResult {
   methodNotes?: string;
   /** Withdraw + sender pays: how much to debit and optional FX buffer */
   withdrawAdvice?: FxWithdrawBufferAdvice;
+  /** Set when currency conversion is used in this calculation */
+  exchangeRateInfo?: {
+    from: string;
+    to: string;
+    rate: number;
+    date: string;
+    source: "frankfurter" | "fallback";
+  };
 }

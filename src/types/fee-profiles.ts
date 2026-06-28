@@ -32,7 +32,10 @@ export interface BankDef {
 
 export interface AlpacaFeeConfig {
   depositFee: number;
+  /** SWIFT / international wire withdrawal (Transfers API or swift_wire) */
   withdrawalWireFee: number;
+  /** Funding Wallet local-rail withdrawal; falls back to withdrawalWireFee if omitted */
+  withdrawalLocalRailFee?: number;
   currencyCloudFee: number;
 }
 

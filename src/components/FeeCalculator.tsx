@@ -5,9 +5,13 @@ import {
   calculateProfileFees,
   currencySymbol,
   formatMoney,
+  FX_RATES_AS_OF,
   getFeeSummaryLines,
+  getIndicativeFxRate,
   getInputCurrency,
+  getTransferCurrency,
 } from "@/lib/fee-calculator";
+import { FEE_SOURCE_LINKS } from "@/lib/fee-sources";
 import {
   getBanksForProfile,
   getFeeProfile,
@@ -107,6 +111,16 @@ export function FeeCalculator({ country }: { country: Country }) {
 
   const headline = result ? buildHeadline(result, direction) : null;
   const feeLines = result ? getFeeSummaryLines(result.steps) : [];
+  const transferCcy = resolvedMethodId
+    ? getTransferCurrency(profile, resolvedMethodId)
+    : profile.currency;
+  const fxInfo =
+    resolvedMethodId && transferCcy !== "USD"
+      ? getIndicativeFxRate(profile, transferCcy)
+      : null;
+  const isLocalRail = resolvedMethodId.includes("local_rail") ||
+    resolvedMethodId === "sepa_local_rail" ||
+    resolvedMethodId === "remit";
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -250,11 +264,6 @@ export function FeeCalculator({ country }: { country: Country }) {
                   {result.bankName}: {result.methodNotes}
                 </p>
               )}
-
-              <p className="text-xs text-slate-400">
-                Internal estimate. FX rates are indicative — not live market
-                prices.
-              </p>
             </div>
           ) : (
             <p className="text-sm text-slate-500">
@@ -263,7 +272,92 @@ export function FeeCalculator({ country }: { country: Country }) {
           )}
         </div>
       </div>
+
+      <FeeSourcesPanel
+        direction={direction}
+        isLocalRail={isLocalRail}
+        transferCcy={transferCcy}
+        fxInfo={fxInfo}
+        brokerFeeUsd={profile.alpaca.withdrawalLocalRailFee ?? profile.alpaca.withdrawalWireFee}
+      />
     </div>
+  );
+}
+
+function FeeSourcesPanel({
+  direction,
+  isLocalRail,
+  transferCcy,
+  fxInfo,
+  brokerFeeUsd,
+}: {
+  direction: TransactionDirection;
+  isLocalRail: boolean;
+  transferCcy: string;
+  fxInfo: ReturnType<typeof getIndicativeFxRate> | null;
+  brokerFeeUsd: number;
+}) {
+  const fxAsOf = new Date(FX_RATES_AS_OF).toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+  });
+
+  return (
+    <div className="border-t border-slate-200 bg-slate-50 px-6 py-4 text-xs leading-relaxed text-slate-600">
+      <p className="font-semibold text-slate-800">Sources &amp; assumptions</p>
+
+      <ul className="mt-2 space-y-2">
+        {isLocalRail && direction === "withdraw" && (
+          <li>
+            <strong className="text-slate-700">Alpaca local-rail withdrawal:</strong>{" "}
+            Alpaca charges a withdrawal fee on <code className="text-[11px]">local_rails</code>{" "}
+            (not just SWIFT). Deposits to Funding Wallets are free. This calculator uses{" "}
+            <strong>${brokerFeeUsd}</strong> from the Musaffa–Alpaca contract — confirm with your
+            agreement.{" "}
+            <SourceLink link={FEE_SOURCE_LINKS.alpacaFundingWallets} />
+          </li>
+        )}
+        {isLocalRail && direction === "deposit" && (
+          <li>
+            <strong className="text-slate-700">Alpaca local-rail deposit:</strong>{" "}
+            No Alpaca deposit fee on Funding Wallets; EUR is converted to USD on receipt.{" "}
+            <SourceLink link={FEE_SOURCE_LINKS.alpacaFundingWallets} />
+          </li>
+        )}
+        {fxInfo && transferCcy !== "USD" && (
+          <li>
+            <strong className="text-slate-700">FX rate:</strong>{" "}
+            Indicative snapshot — 1 {transferCcy} = ${fxInfo.rate.toFixed(4)} USD
+            (as of {fxAsOf}). This is <strong>not a live market feed</strong>; bank markups are
+            applied separately. Rates change daily — refresh the profile or verify before quoting
+            customers.
+          </li>
+        )}
+        <li>
+          <strong className="text-slate-700">References:</strong>{" "}
+          <SourceLink link={FEE_SOURCE_LINKS.alpacaFundingWalletsDocs} /> ·{" "}
+          <SourceLink link={FEE_SOURCE_LINKS.alpacaWithdrawalApi} /> ·{" "}
+          <SourceLink link={FEE_SOURCE_LINKS.alpacaWireFees} />
+        </li>
+      </ul>
+    </div>
+  );
+}
+
+function SourceLink({
+  link,
+}: {
+  link: { label: string; href: string };
+}) {
+  return (
+    <a
+      href={link.href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="font-medium text-musaffa-700 hover:underline"
+    >
+      {link.label}
+    </a>
   );
 }
 

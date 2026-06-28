@@ -11,6 +11,9 @@ import { getBankMethodFees } from "@/lib/fee-profiles";
 
 const ACCOUNT_CCY = "USD";
 
+/** Snapshot date for hard-coded indicative FX — not a live feed */
+export const FX_RATES_AS_OF = "2025-06-01";
+
 const FX_RATES: Record<string, number> = {
   EUR: 1.08,
   CHF: 1.12,
@@ -60,19 +63,34 @@ function needsFx(transferCcy: string): boolean {
   return transferCcy !== ACCOUNT_CCY;
 }
 
+export function getIndicativeFxRate(
+  profile: CountryFeeProfile,
+  transferCcy: string,
+): { rate: number; asOf: string; isLive: false } {
+  return {
+    rate: fxRate(profile, transferCcy),
+    asOf: FX_RATES_AS_OF,
+    isLive: false,
+  };
+}
+
+function isLocalRailMethod(methodId: string): boolean {
+  return (
+    methodId === "sepa_local_rail" ||
+    methodId === "local_rail_withdraw" ||
+    methodId === "remit"
+  );
+}
+
 function brokerFeeForMethod(
   profile: CountryFeeProfile,
   methodId: string,
   direction: TransactionDirection,
 ): number {
   if (methodId === "ach" || methodId === "local_transfer") return 0;
-  if (
-    methodId === "sepa_local_rail" ||
-    methodId === "local_rail_withdraw" ||
-    methodId === "remit"
-  ) {
+  if (isLocalRailMethod(methodId)) {
     return direction === "withdraw"
-      ? profile.alpaca.withdrawalWireFee
+      ? (profile.alpaca.withdrawalLocalRailFee ?? profile.alpaca.withdrawalWireFee)
       : profile.alpaca.depositFee;
   }
   if (methodId.includes("wire") || methodId.includes("swift")) {
@@ -81,6 +99,31 @@ function brokerFeeForMethod(
       : profile.alpaca.depositFee;
   }
   return 0;
+}
+
+export function getBrokerFeeLabel(
+  methodId: string,
+  direction: TransactionDirection,
+): string {
+  if (direction === "deposit") return "Alpaca deposit fee";
+  if (isLocalRailMethod(methodId)) return "Alpaca withdrawal fee (local rail)";
+  if (methodId.includes("wire") || methodId.includes("swift")) {
+    return "Alpaca withdrawal fee (wire)";
+  }
+  return "Broker processing fee";
+}
+
+export function getBrokerFeeDetail(
+  methodId: string,
+  direction: TransactionDirection,
+): string {
+  if (direction === "deposit") {
+    return "Funding Wallet deposits are free per Alpaca; Musaffa contract rate shown if non-zero.";
+  }
+  if (isLocalRailMethod(methodId)) {
+    return "Alpaca charges a withdrawal fee on local rails (amount varies by rail and broker contract).";
+  }
+  return "Outgoing wire processing fee per Musaffa–Alpaca agreement.";
 }
 
 function isSwiftMethod(methodId: string): boolean {
@@ -122,6 +165,7 @@ export function calculateProfileFees(
     bankFees,
     bankName: bank.name,
     methodLabel: method.label,
+    methodId,
     brokerFee,
     ccFee,
     swiftFee,
@@ -148,11 +192,23 @@ interface CalcCtx {
   bankFees: MethodBankFees;
   bankName: string;
   methodLabel: string;
+  methodId: string;
   brokerFee: number;
   ccFee: number;
   swiftFee: number;
   methodNotes?: string;
   direction: TransactionDirection;
+}
+
+function brokerFeeStep(ctx: CalcCtx): FlowStep {
+  return {
+    kind: "broker_fee",
+    label: getBrokerFeeLabel(ctx.methodId, ctx.direction),
+    amount: ctx.brokerFee,
+    currency: ACCOUNT_CCY,
+    detail: getBrokerFeeDetail(ctx.methodId, ctx.direction),
+    isDeduction: true,
+  };
 }
 
 function usdFees(ctx: CalcCtx): number {
@@ -208,6 +264,17 @@ function solveUserSendsForDepositTarget(
   return userSends;
 }
 
+function fxRateDetail(spread: number, rate: number, toCcy: string): string {
+  const pct = (spread * 100).toFixed(2);
+  const asOf = new Date(FX_RATES_AS_OF).toLocaleDateString("en-US", {
+    month: "short",
+    year: "numeric",
+  });
+  if (spread > 0) {
+    return `1 ${toCcy} = ${formatUsd(rate)} · bank markup ${pct}% · indicative FX snapshot (${asOf})`;
+  }
+  return `1 ${toCcy} = ${formatUsd(rate)} · indicative FX snapshot (${asOf}), not live`;
+}
 function fxStepToUsd(
   fromAmount: number,
   fromCcy: string,
@@ -215,17 +282,13 @@ function fxStepToUsd(
   spread: number,
   rate: number,
 ): FlowStep {
-  const pct = (spread * 100).toFixed(2);
   const spreadCost = round2(fromAmount * spread);
   return {
     kind: "fx_conversion",
     label: `${fromCcy} → USD`,
     amount: toAmount,
     currency: ACCOUNT_CCY,
-    detail:
-      spread > 0
-        ? `1 ${fromCcy} = ${formatUsd(rate)} · bank markup ${pct}%`
-        : `1 ${fromCcy} = ${formatUsd(rate)} (indicative)`,
+    detail: fxRateDetail(spread, rate, fromCcy),
     isDeduction: false,
     feeDeduction:
       spread > 0 ? { amount: spreadCost, currency: fromCcy } : undefined,
@@ -239,17 +302,13 @@ function fxStepFromUsd(
   spread: number,
   rate: number,
 ): FlowStep {
-  const pct = (spread * 100).toFixed(2);
   const spreadCost = round2(usdAmount * spread);
   return {
     kind: "fx_conversion",
     label: `USD → ${toCcy}`,
     amount: toAmount,
     currency: toCcy,
-    detail:
-      spread > 0
-        ? `1 ${toCcy} = ${formatUsd(rate)} · bank markup ${pct}%`
-        : `1 ${toCcy} = ${formatUsd(rate)} (indicative)`,
+    detail: fxRateDetail(spread, rate, toCcy),
     isDeduction: false,
     feeDeduction:
       spread > 0 ? { amount: spreadCost, currency: ACCOUNT_CCY } : undefined,
@@ -301,14 +360,7 @@ function calcDepositReceiverPays(ctx: CalcCtx): FeeCalculationResult {
   let lands = usdAfterConversion;
 
   if (ctx.brokerFee > 0) {
-    steps.push({
-      kind: "broker_fee",
-      label: "Broker processing fee",
-      amount: ctx.brokerFee,
-      currency: ACCOUNT_CCY,
-      detail: "Wire processing fee",
-      isDeduction: true,
-    });
+    steps.push(brokerFeeStep(ctx));
     lands = round2(lands - ctx.brokerFee);
   }
 
@@ -428,14 +480,7 @@ function buildDepositSenderSteps(
   }
 
   if (ctx.brokerFee > 0) {
-    steps.push({
-      kind: "broker_fee",
-      label: "Broker processing fee",
-      amount: ctx.brokerFee,
-      currency: ACCOUNT_CCY,
-      detail: "Wire processing fee",
-      isDeduction: true,
-    });
+    steps.push(brokerFeeStep(ctx));
     running = round2(running - ctx.brokerFee);
   }
 
@@ -486,13 +531,7 @@ function calcWithdrawReceiverPays(ctx: CalcCtx): FeeCalculationResult {
   let usdRemaining = debitedUsd;
 
   if (ctx.brokerFee > 0) {
-    steps.push({
-      kind: "broker_fee",
-      label: "Broker processing fee",
-      amount: ctx.brokerFee,
-      currency: ACCOUNT_CCY,
-      isDeduction: true,
-    });
+    steps.push(brokerFeeStep(ctx));
     usdRemaining = round2(usdRemaining - ctx.brokerFee);
   }
 
@@ -606,13 +645,7 @@ function calcWithdrawSenderPays(ctx: CalcCtx): FeeCalculationResult {
   });
 
   if (ctx.brokerFee > 0) {
-    orderedSteps.push({
-      kind: "broker_fee",
-      label: "Broker processing fee",
-      amount: ctx.brokerFee,
-      currency: ACCOUNT_CCY,
-      isDeduction: true,
-    });
+    orderedSteps.push(brokerFeeStep(ctx));
   }
 
   if (ctx.ccFee > 0) {

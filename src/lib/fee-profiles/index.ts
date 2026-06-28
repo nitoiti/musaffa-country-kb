@@ -137,7 +137,7 @@ const sepaRail = (deposit: number, withdrawal: number, fx = 0.008, notes?: strin
 export const IE_FEE_PROFILE: CountryFeeProfile = {
   currency: "EUR",
   fxRateToUsd: 1.08,
-  alpaca: { depositFee: 0, withdrawalWireFee: 50, currencyCloudFee: 0 },
+  alpaca: { depositFee: 0, withdrawalWireFee: 50, withdrawalLocalRailFee: 50, currencyCloudFee: 0 },
   methods: [
     { id: "sepa_local_rail", label: "EUR local rail", description: "Funding Wallet SEPA/local rail — recommended.", deposit: true, withdraw: true, recommended: true },
     { id: "international_swift", label: "International SWIFT", description: "SWIFT wire in EUR or USD.", deposit: true, withdraw: true },
@@ -153,7 +153,7 @@ export const IE_FEE_PROFILE: CountryFeeProfile = {
 export const DE_FEE_PROFILE: CountryFeeProfile = {
   currency: "EUR",
   fxRateToUsd: 1.08,
-  alpaca: { depositFee: 0, withdrawalWireFee: 50, currencyCloudFee: 0 },
+  alpaca: { depositFee: 0, withdrawalWireFee: 50, withdrawalLocalRailFee: 50, currencyCloudFee: 0 },
   methods: [
     { id: "sepa_local_rail", label: "EUR local rail", description: "Funding Wallet local rail — default route.", deposit: true, withdraw: true, recommended: true },
     { id: "international_swift", label: "International SWIFT", description: "Fallback when local rail unavailable.", deposit: true, withdraw: true },
@@ -170,7 +170,7 @@ export const DE_FEE_PROFILE: CountryFeeProfile = {
 export const NL_FEE_PROFILE: CountryFeeProfile = {
   currency: "EUR",
   fxRateToUsd: 1.08,
-  alpaca: { depositFee: 0, withdrawalWireFee: 50, currencyCloudFee: 0 },
+  alpaca: { depositFee: 0, withdrawalWireFee: 50, withdrawalLocalRailFee: 50, currencyCloudFee: 0 },
   methods: [
     { id: "sepa_local_rail", label: "EUR local rail", description: "Recommended — low FX markup.", deposit: true, withdraw: true, recommended: true },
     { id: "international_swift", label: "International SWIFT", description: "Higher FX and correspondent fees.", deposit: true, withdraw: true },
@@ -186,7 +186,7 @@ export const NL_FEE_PROFILE: CountryFeeProfile = {
 export const FR_FEE_PROFILE: CountryFeeProfile = {
   currency: "EUR",
   fxRateToUsd: 1.08,
-  alpaca: { depositFee: 0, withdrawalWireFee: 50, currencyCloudFee: 0 },
+  alpaca: { depositFee: 0, withdrawalWireFee: 50, withdrawalLocalRailFee: 50, currencyCloudFee: 0 },
   methods: [
     { id: "sepa_local_rail", label: "EUR local rail", description: "Funding Wallet local rail.", deposit: true, withdraw: true, recommended: true },
     { id: "international_swift", label: "International SWIFT", description: "SWIFT fallback.", deposit: true, withdraw: true },
@@ -202,7 +202,7 @@ export const FR_FEE_PROFILE: CountryFeeProfile = {
 export const CH_FEE_PROFILE: CountryFeeProfile = {
   currency: "CHF",
   fxRateToUsd: 1.12,
-  alpaca: { depositFee: 0, withdrawalWireFee: 50, currencyCloudFee: 0 },
+  alpaca: { depositFee: 0, withdrawalWireFee: 50, withdrawalLocalRailFee: 50, currencyCloudFee: 0 },
   methods: [
     { id: "swift_chf", label: "SWIFT (CHF)", description: "Primary funding route for Swiss users.", deposit: true, withdraw: true, recommended: true },
     { id: "swift_usd", label: "SWIFT (USD)", description: "USD wire from Swiss bank — no FX conversion.", deposit: true, withdraw: true, transferCurrency: "USD" },
@@ -238,7 +238,7 @@ export const CH_FEE_PROFILE: CountryFeeProfile = {
 export const UAE_FEE_PROFILE: CountryFeeProfile = {
   currency: "AED",
   fxRateToUsd: 0.27,
-  alpaca: { depositFee: 0, withdrawalWireFee: 50, currencyCloudFee: 0 },
+  alpaca: { depositFee: 0, withdrawalWireFee: 50, withdrawalLocalRailFee: 50, currencyCloudFee: 0 },
   methods: [
     { id: "international_swift", label: "International SWIFT", description: "Primary route — AED/USD wire to Funding Wallet.", deposit: true, withdraw: true, recommended: true },
     { id: "local_transfer", label: "Local bank transfer", description: "Domestic UAE transfer where supported.", deposit: true, withdraw: true },
@@ -266,7 +266,7 @@ export const UAE_FEE_PROFILE: CountryFeeProfile = {
 export const SG_FEE_PROFILE: CountryFeeProfile = {
   currency: "SGD",
   fxRateToUsd: 0.74,
-  alpaca: { depositFee: 0, withdrawalWireFee: 50, currencyCloudFee: 0 },
+  alpaca: { depositFee: 0, withdrawalWireFee: 50, withdrawalLocalRailFee: 50, currencyCloudFee: 0 },
   methods: [
     { id: "remit", label: "Remittance (DBS Remit etc.)", description: "Same-day remit corridors — often low fee.", deposit: true, withdraw: false, recommended: true },
     { id: "swift", label: "Telegraphic transfer (SWIFT)", description: "Traditional SWIFT — higher fees.", deposit: true, withdraw: true },
@@ -294,7 +294,7 @@ export const SG_FEE_PROFILE: CountryFeeProfile = {
 export const BE_FEE_PROFILE: CountryFeeProfile = {
   currency: "EUR",
   fxRateToUsd: 1.08,
-  alpaca: { depositFee: 0, withdrawalWireFee: 50, currencyCloudFee: 0 },
+  alpaca: { depositFee: 0, withdrawalWireFee: 50, withdrawalLocalRailFee: 50, currencyCloudFee: 0 },
   methods: [
     { id: "sepa_local_rail", label: "EUR local rail", description: "Funding Wallet local rail.", deposit: true, withdraw: true, recommended: true },
     { id: "international_swift", label: "International SWIFT", description: "SWIFT fallback.", deposit: true, withdraw: true },
@@ -309,7 +309,7 @@ export const BE_FEE_PROFILE: CountryFeeProfile = {
 export const SE_FEE_PROFILE: CountryFeeProfile = {
   currency: "SEK",
   fxRateToUsd: 0.096,
-  alpaca: { depositFee: 0, withdrawalWireFee: 50, currencyCloudFee: 0 },
+  alpaca: { depositFee: 0, withdrawalWireFee: 50, withdrawalLocalRailFee: 50, currencyCloudFee: 0 },
   methods: [
     { id: "sepa_local_rail", label: "Local rail (SEK/EUR)", description: "Recommended local-rail route.", deposit: true, withdraw: true, recommended: true },
     { id: "international_swift", label: "International payment", description: "Higher Nordea intl fees.", deposit: true, withdraw: true },
@@ -326,7 +326,7 @@ export const SE_FEE_PROFILE: CountryFeeProfile = {
 
 export const DEFAULT_FEE_PROFILE: CountryFeeProfile = {
   currency: "USD",
-  alpaca: { depositFee: 0, withdrawalWireFee: 50, currencyCloudFee: 0 },
+  alpaca: { depositFee: 0, withdrawalWireFee: 50, withdrawalLocalRailFee: 50, currencyCloudFee: 0 },
   methods: [
     { id: "international_swift", label: "International SWIFT", description: "Wire to/from Alpaca Funding Wallet.", deposit: true, withdraw: true, recommended: true },
   ],

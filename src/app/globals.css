@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+@theme {
+  --color-musaffa-50: #f0fdf4;
+  --color-musaffa-100: #dcfce7;
+  --color-musaffa-200: #bbf7d0;
+  --color-musaffa-500: #22c55e;
+  --color-musaffa-600: #16a34a;
+  --color-musaffa-700: #15803d;
+  --color-musaffa-800: #166534;
+  --color-musaffa-900: #14532d;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  @apply bg-slate-50 text-slate-900 antialiased;
+}

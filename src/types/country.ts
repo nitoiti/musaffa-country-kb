@@ -108,6 +108,7 @@ export interface CountryListItem {
   currency: string | null;
   ineligibilityCategory: IneligibilityCategory | null;
   tier: import("@/lib/country-tiers").CountryTier | null;
+  contentSource: "ai_generated" | "human_verified";
 }
 
 export type DashboardStatus =

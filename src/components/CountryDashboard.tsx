@@ -2,11 +2,21 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ContentSourceBadge } from "@/components/ContentSourceBadge";
 import { MarketingAccessBadge, RiskBadge, StatusBadge, TierBadge } from "@/components/StatusBadge";
 import { getDashboardStatus } from "@/lib/countries";
 import { compareCountryPriority, TIER_OPTIONS } from "@/lib/country-tiers";
 import { getMarketingAccess } from "@/lib/marketing-access";
 import type { CountryListItem, DashboardStatus, MarketingAccess } from "@/types/country";
+
+const CONTENT_FILTERS: {
+  value: CountryListItem["contentSource"] | "all";
+  label: string;
+}[] = [
+  { value: "all", label: "All" },
+  { value: "ai_generated", label: "AI draft" },
+  { value: "human_verified", label: "Verified" },
+];
 
 const ALPACA_FILTERS: { value: DashboardStatus | "all"; label: string }[] = [
   { value: "all", label: "All" },
@@ -30,6 +40,10 @@ export function CountryDashboard({ countries }: { countries: CountryListItem[] }
   const [marketingFilter, setMarketingFilter] = useState<MarketingAccess | "all">("all");
   const [tierFilter, setTierFilter] = useState<string>("all");
 
+  const [contentFilter, setContentFilter] = useState<
+    CountryListItem["contentSource"] | "all"
+  >("all");
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return countries
@@ -39,6 +53,7 @@ export function CountryDashboard({ countries }: { countries: CountryListItem[] }
         if (alpacaFilter !== "all" && alpacaStatus !== alpacaFilter) return false;
         if (marketingFilter !== "all" && marketing !== marketingFilter) return false;
         if (tierFilter !== "all" && c.tier !== Number(tierFilter)) return false;
+        if (contentFilter !== "all" && c.contentSource !== contentFilter) return false;
         if (!q) return true;
         return (
           c.name.toLowerCase().includes(q) ||
@@ -47,18 +62,23 @@ export function CountryDashboard({ countries }: { countries: CountryListItem[] }
         );
       })
       .sort(compareCountryPriority);
-  }, [countries, query, alpacaFilter, marketingFilter, tierFilter]);
+  }, [countries, query, alpacaFilter, marketingFilter, tierFilter, contentFilter]);
 
   const alpacaLabel = ALPACA_FILTERS.find((f) => f.value === alpacaFilter)?.label;
   const marketingLabel = MARKETING_FILTERS.find((f) => f.value === marketingFilter)?.label;
   const tierLabel = TIER_OPTIONS.find((f) => f.value === tierFilter)?.label;
+  const contentLabel = CONTENT_FILTERS.find((f) => f.value === contentFilter)?.label;
   const hasFilters =
-    alpacaFilter !== "all" || marketingFilter !== "all" || tierFilter !== "all";
+    alpacaFilter !== "all" ||
+    marketingFilter !== "all" ||
+    tierFilter !== "all" ||
+    contentFilter !== "all";
 
   function clearAllFilters() {
     setAlpacaFilter("all");
     setMarketingFilter("all");
     setTierFilter("all");
+    setContentFilter("all");
   }
 
   return (
@@ -91,6 +111,12 @@ export function CountryDashboard({ countries }: { countries: CountryListItem[] }
               onRemove={() => setTierFilter("all")}
             />
           )}
+          {contentFilter !== "all" && contentLabel && (
+            <FilterChip
+              label={`Content: ${contentLabel}`}
+              onRemove={() => setContentFilter("all")}
+            />
+          )}
           <button
             type="button"
             onClick={clearAllFilters}
@@ -108,14 +134,15 @@ export function CountryDashboard({ countries }: { countries: CountryListItem[] }
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
         <table className="w-full table-fixed divide-y divide-slate-200">
           <colgroup>
-            <col className="w-[24%]" />
+            <col className="w-[22%]" />
             <col className="w-[7%]" />
             <col className="hidden w-[7%] sm:table-column" />
-            <col className="hidden w-[12%] md:table-column" />
+            <col className="hidden w-[11%] md:table-column" />
+            <col className="w-[11%]" />
             <col className="w-[12%]" />
-            <col className="w-[14%]" />
-            <col className="hidden w-[12%] lg:table-column" />
-            <col className="hidden w-[8%] lg:table-column" />
+            <col className="w-[10%]" />
+            <col className="hidden w-[11%] lg:table-column" />
+            <col className="hidden w-[7%] lg:table-column" />
           </colgroup>
           <thead className="bg-slate-50">
             <tr>
@@ -156,6 +183,16 @@ export function CountryDashboard({ countries }: { countries: CountryListItem[] }
                   options={MARKETING_FILTERS}
                   value={marketingFilter}
                   onChange={(v) => setMarketingFilter(v as MarketingAccess | "all")}
+                />
+              </th>
+              <th className="px-4 py-3 text-left">
+                <ColumnFilterHeader
+                  label="Content"
+                  isActive={contentFilter !== "all"}
+                  activeSelection={contentLabel}
+                  options={CONTENT_FILTERS}
+                  value={contentFilter}
+                  onChange={(v) => setContentFilter(v)}
                 />
               </th>
               <th className="hidden px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 lg:table-cell">
@@ -199,6 +236,9 @@ export function CountryDashboard({ countries }: { countries: CountryListItem[] }
                 </td>
                 <td className="px-4 py-3">
                   <MarketingAccessBadge access={getMarketingAccess(country)} />
+                </td>
+                <td className="px-4 py-3">
+                  <ContentSourceBadge source={country.contentSource} compact />
                 </td>
                 <td className="hidden px-4 py-3 lg:table-cell">
                   <RiskBadge level={country.alpacaRiskLevel} />

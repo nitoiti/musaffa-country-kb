@@ -1,6 +1,6 @@
 import countriesData from "../../data/countries.json";
 import { compareCountryPriority, getCountryTier } from "@/lib/country-tiers";
-import { mapCountryRow } from "@/lib/country-mapper";
+import { dbSourceToLabel, mapCountryRow } from "@/lib/country-mapper";
 import { prisma } from "@/lib/db";
 import type { Country, CountryListItem, DashboardStatus } from "@/types/country";
 
@@ -59,6 +59,45 @@ export async function getAllCountries(): Promise<Country[]> {
 }
 
 export async function getCountryListItems(): Promise<CountryListItem[]> {
+  if (process.env.DATABASE_URL) {
+    try {
+      const count = await prisma.country.count();
+      if (count > 0) {
+        const rows = await prisma.country.findMany({
+          select: {
+            slug: true,
+            name: true,
+            code: true,
+            region: true,
+            eligible: true,
+            alpacaRiskLevel: true,
+            currency: true,
+            ineligibilityCategory: true,
+            contentSource: true,
+          },
+          orderBy: { name: "asc" },
+        });
+        return rows
+          .map((r) => ({
+            slug: r.slug,
+            name: r.name,
+            code: r.code,
+            region: r.region,
+            eligible: r.eligible,
+            alpacaRiskLevel: r.alpacaRiskLevel,
+            currency: r.currency,
+            ineligibilityCategory:
+              r.ineligibilityCategory as CountryListItem["ineligibilityCategory"],
+            tier: getCountryTier(r.slug),
+            contentSource: dbSourceToLabel(r.contentSource),
+          }))
+          .sort(compareCountryPriority);
+      }
+    } catch {
+      /* fallback */
+    }
+  }
+
   const countries = await loadCountries();
   return countries
     .map((c) => ({
@@ -71,6 +110,7 @@ export async function getCountryListItems(): Promise<CountryListItem[]> {
       currency: c.currency,
       ineligibilityCategory: c.ineligibilityCategory,
       tier: getCountryTier(c.slug),
+      contentSource: "ai_generated" as const,
     }))
     .sort(compareCountryPriority);
 }
@@ -92,12 +132,27 @@ export async function getCountryBySlug(slug: string): Promise<Country | undefine
 }
 
 export async function getCountrySummary() {
+  if (process.env.DATABASE_URL) {
+    try {
+      const count = await prisma.country.count();
+      if (count > 0) {
+        const [total, aiGenerated, teamVerified] = await Promise.all([
+          prisma.country.count(),
+          prisma.country.count({ where: { contentSource: "AI_GENERATED" } }),
+          prisma.country.count({ where: { contentSource: "HUMAN_VERIFIED" } }),
+        ]);
+        return { total, aiGenerated, teamVerified };
+      }
+    } catch {
+      /* fallback */
+    }
+  }
+
   const countries = await loadCountries();
-  const eligible = countries.filter((c) => c.eligible).length;
   return {
     total: countries.length,
-    eligible,
-    notEligible: countries.length - eligible,
+    aiGenerated: countries.length,
+    teamVerified: 0,
   };
 }
 

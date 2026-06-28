@@ -44,4 +44,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     },
     signIn: authConfig.callbacks?.signIn,
   },
+  events: {
+    async signIn({ user }) {
+      if (!user.email) return;
+      const role = isBootstrapAdmin(user.email) ? "ADMIN" : undefined;
+      if (role) {
+        await prisma.user.updateMany({
+          where: { email: user.email.toLowerCase() },
+          data: { role: "ADMIN" },
+        });
+      }
+    },
+  },
 });

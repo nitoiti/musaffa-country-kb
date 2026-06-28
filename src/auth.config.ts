@@ -1,6 +1,6 @@
 import type { NextAuthConfig } from "next-auth";
 import Google from "next-auth/providers/google";
-import { isBootstrapAdmin, isMusaffaEmail } from "@/lib/permissions";
+import { isMusaffaEmail } from "@/lib/permissions";
 
 export const authConfig = {
   providers: [
@@ -14,13 +14,6 @@ export const authConfig = {
     error: "/login",
   },
   callbacks: {
-    authorized({ auth, request: { nextUrl } }) {
-      const path = nextUrl.pathname;
-      if (path.startsWith("/login") || path.startsWith("/api/auth")) {
-        return true;
-      }
-      return !!auth?.user;
-    },
     signIn({ user }) {
       if (!user.email || !isMusaffaEmail(user.email)) {
         return "/login?error=AccessDenied";
@@ -42,19 +35,6 @@ export const authConfig = {
         token.role = session.user.role;
       }
       return token;
-    },
-  },
-  events: {
-    async signIn({ user }) {
-      if (!user.email) return;
-      const { prisma } = await import("@/lib/db");
-      const role = isBootstrapAdmin(user.email) ? "ADMIN" : undefined;
-      if (role) {
-        await prisma.user.updateMany({
-          where: { email: user.email.toLowerCase() },
-          data: { role: "ADMIN" },
-        });
-      }
     },
   },
   trustHost: true,

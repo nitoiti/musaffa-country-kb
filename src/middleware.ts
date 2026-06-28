@@ -1,12 +1,22 @@
-import NextAuth from "next-auth";
-import { authConfig } from "@/auth.config";
+import { getToken } from "next-auth/jwt";
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 
-/** Edge-safe middleware — no Prisma adapter */
-export default NextAuth({
-  ...authConfig,
-  providers: [],
-  secret: process.env.AUTH_SECRET,
-}).auth;
+/** Lightweight edge middleware — avoids bundling Prisma / full NextAuth */
+export async function middleware(req: NextRequest) {
+  const { pathname } = req.nextUrl;
+
+  if (pathname.startsWith("/api/auth") || pathname.startsWith("/login")) {
+    return NextResponse.next();
+  }
+
+  const token = await getToken({ req, secret: process.env.AUTH_SECRET });
+  if (!token) {
+    return NextResponse.redirect(new URL("/login", req.nextUrl));
+  }
+
+  return NextResponse.next();
+}
 
 export const config = {
   matcher: [

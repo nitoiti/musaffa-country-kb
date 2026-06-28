@@ -14,6 +14,13 @@ export const authConfig = {
     error: "/login",
   },
   callbacks: {
+    authorized({ auth, request: { nextUrl } }) {
+      const path = nextUrl.pathname;
+      if (path.startsWith("/login") || path.startsWith("/api/auth")) {
+        return true;
+      }
+      return !!auth?.user;
+    },
     signIn({ user }) {
       if (!user.email || !isMusaffaEmail(user.email)) {
         return "/login?error=AccessDenied";

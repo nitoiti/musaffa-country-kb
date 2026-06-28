@@ -21,6 +21,15 @@ export default async function LoginPage({
           <strong>@musaffa.com</strong> Google account.
         </p>
 
+        {error === "Configuration" && (
+          <p className="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            Server auth is not configured. In Vercel, set{" "}
+            <code className="text-xs">AUTH_SECRET</code>,{" "}
+            <code className="text-xs">AUTH_GOOGLE_ID</code>, and{" "}
+            <code className="text-xs">AUTH_GOOGLE_SECRET</code>, then redeploy.
+          </p>
+        )}
+
         {error === "AccessDenied" && (
           <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">
             Only @musaffa.com email addresses are allowed.

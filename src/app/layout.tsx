@@ -36,8 +36,11 @@ export default function RootLayout({
                   </span>
                 </div>
               </Link>
-              <nav className="flex items-center gap-4 text-sm text-slate-600">
-                <Link href="/" className="hover:text-musaffa-700">
+              <nav className="flex items-center gap-3 sm:gap-5">
+                <Link
+                  href="/"
+                  className="text-sm font-medium text-slate-600 hover:text-musaffa-700"
+                >
                   Dashboard
                 </Link>
                 <AuthHeader />

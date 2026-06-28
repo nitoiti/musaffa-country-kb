@@ -78,6 +78,15 @@ export interface FeeCalculationInput {
   methodId: string;
   bankId: string;
   profile: CountryFeeProfile;
+  /** Target currency user wants in their bank (withdraw + sender pays). Defaults to method transfer currency. */
+  receiveCurrency?: string;
+}
+
+export interface FxWithdrawBufferAdvice {
+  bufferMinUsd: number;
+  bufferMaxUsd: number;
+  debitWithBufferMinUsd: number;
+  debitWithBufferMaxUsd: number;
 }
 
 export interface FeeCalculationResult {
@@ -96,4 +105,6 @@ export interface FeeCalculationResult {
   totalFees: number;
   steps: FlowStep[];
   methodNotes?: string;
+  /** Withdraw + sender pays: how much to debit and optional FX buffer */
+  withdrawAdvice?: FxWithdrawBufferAdvice;
 }

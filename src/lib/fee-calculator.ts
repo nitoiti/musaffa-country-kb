@@ -49,6 +49,27 @@ function fxRate(profile: CountryFeeProfile, transferCcy: string): number {
   return profile.fxRateToUsd ?? FX_RATES[transferCcy] ?? 1;
 }
 
+/** Suggested extra USD on withdraw when FX applies — settlement rate may differ from estimate */
+export const FX_WITHDRAW_BUFFER_USD = { min: 5, max: 10 } as const;
+
+export function getReceiveCurrencyOptions(
+  profile: CountryFeeProfile,
+  methodId: string,
+): string[] {
+  const transfer = getTransferCurrency(profile, methodId);
+  const options = new Set<string>([transfer]);
+  if (profile.currency !== transfer) {
+    options.add(profile.currency);
+  }
+  if (
+    (methodId.includes("swift") || methodId === "international_swift") &&
+    transfer !== "USD"
+  ) {
+    options.add("USD");
+  }
+  return [...options];
+}
+
 export function getTransferCurrency(
   profile: CountryFeeProfile,
   methodId: string,
@@ -137,7 +158,7 @@ function isSwiftMethod(methodId: string): boolean {
 export function calculateProfileFees(
   input: FeeCalculationInput,
 ): FeeCalculationResult | null {
-  const { profile, methodId, bankId, direction, amount, commissionBearer } =
+  const { profile, methodId, bankId, direction, amount, commissionBearer, receiveCurrency: receiveCurrencyInput } =
     input;
   const method = profile.methods.find((m) => m.id === methodId);
   const bank = profile.banks.find((b) => b.id === bankId);
@@ -147,6 +168,15 @@ export function calculateProfileFees(
   if (!bankFees) return null;
 
   const transferCcy = getTransferCurrency(profile, methodId);
+  const receiveCurrency = receiveCurrencyInput ?? transferCcy;
+  if (
+    direction === "withdraw" &&
+    commissionBearer === "sender" &&
+    receiveCurrency !== transferCcy
+  ) {
+    return null;
+  }
+
   const rate = fxRate(profile, transferCcy);
   const fxSpread = needsFx(transferCcy) ? bankFees.fxSpreadPercent : 0;
   const brokerFee = brokerFeeForMethod(profile, methodId, direction);
@@ -639,9 +669,10 @@ function calcWithdrawSenderPays(ctx: CalcCtx): FeeCalculationResult {
 
   orderedSteps.push({
     kind: "account_debit",
-    label: "Debited from brokerage account",
+    label: "Withdraw from brokerage account",
     amount: debitedUsd,
     currency: ACCOUNT_CCY,
+    detail: `Minimum to reach ${formatMoney(targetReceive, receiveCcy)} in the user's bank`,
   });
 
   if (ctx.brokerFee > 0) {
@@ -696,6 +727,15 @@ function calcWithdrawSenderPays(ctx: CalcCtx): FeeCalculationResult {
 
   const feeSummary = sumDeductionSteps(orderedSteps);
 
+  const withdrawAdvice = needsFx(transferCcy)
+    ? {
+        bufferMinUsd: FX_WITHDRAW_BUFFER_USD.min,
+        bufferMaxUsd: FX_WITHDRAW_BUFFER_USD.max,
+        debitWithBufferMinUsd: round2(debitedUsd + FX_WITHDRAW_BUFFER_USD.min),
+        debitWithBufferMaxUsd: round2(debitedUsd + FX_WITHDRAW_BUFFER_USD.max),
+      }
+    : undefined;
+
   return {
     direction: "withdraw",
     commissionBearer: "sender",
@@ -711,6 +751,7 @@ function calcWithdrawSenderPays(ctx: CalcCtx): FeeCalculationResult {
     totalFees: feeSummary,
     steps: orderedSteps,
     methodNotes: ctx.methodNotes,
+    withdrawAdvice,
   };
 }
 
@@ -746,10 +787,12 @@ export function getInputCurrency(
   methodId: string,
   direction: TransactionDirection,
   commissionBearer: CommissionBearer,
+  receiveCurrency?: string,
 ): string {
   const transferCcy = getTransferCurrency(profile, methodId);
   if (commissionBearer === "sender") {
-    return direction === "deposit" ? ACCOUNT_CCY : transferCcy;
+    if (direction === "deposit") return ACCOUNT_CCY;
+    return receiveCurrency ?? transferCcy;
   }
   return direction === "deposit" ? transferCcy : ACCOUNT_CCY;
 }

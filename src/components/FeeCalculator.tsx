@@ -9,6 +9,7 @@ import {
   getFeeSummaryLines,
   getIndicativeFxRate,
   getInputCurrency,
+  getReceiveCurrencyOptions,
   getTransferCurrency,
 } from "@/lib/fee-calculator";
 import { FEE_SOURCE_LINKS } from "@/lib/fee-sources";
@@ -43,6 +44,7 @@ export function FeeCalculator({ country }: { country: Country }) {
 
   const [methodId, setMethodId] = useState(defaultMethodId);
   const [bankId, setBankId] = useState("");
+  const [receiveCurrency, setReceiveCurrency] = useState("");
 
   const banksForMethod = useMemo(
     () => banks.filter((b) => b.methods[methodId || defaultMethodId]),
@@ -50,12 +52,31 @@ export function FeeCalculator({ country }: { country: Country }) {
   );
 
   const resolvedMethodId = methodId || defaultMethodId;
+  const receiveCurrencyOptions = useMemo(
+    () =>
+      resolvedMethodId
+        ? getReceiveCurrencyOptions(profile, resolvedMethodId)
+        : [profile.currency],
+    [profile, resolvedMethodId],
+  );
+  const resolvedReceiveCurrency =
+    receiveCurrencyOptions.includes(receiveCurrency)
+      ? receiveCurrency
+      : receiveCurrencyOptions[0] ?? profile.currency;
   const resolvedBankId =
     bankId || banksForMethod[0]?.id || "";
 
   useEffect(() => {
     setMethodId(defaultMethodId);
   }, [defaultMethodId]);
+
+  useEffect(() => {
+    if (!resolvedMethodId) return;
+    const options = getReceiveCurrencyOptions(profile, resolvedMethodId);
+    setReceiveCurrency((prev) =>
+      options.includes(prev) ? prev : options[0] ?? profile.currency,
+    );
+  }, [resolvedMethodId, profile]);
 
   useEffect(() => {
     if (!resolvedMethodId) return;
@@ -68,8 +89,17 @@ export function FeeCalculator({ country }: { country: Country }) {
   const parsedAmount = parseFloat(amount) || 0;
 
   const inputCurrency = resolvedMethodId
-    ? getInputCurrency(profile, resolvedMethodId, direction, commissionBearer)
+    ? getInputCurrency(
+        profile,
+        resolvedMethodId,
+        direction,
+        commissionBearer,
+        resolvedReceiveCurrency,
+      )
     : profile.currency;
+
+  const isTargetReceiveInput =
+    direction === "withdraw" && commissionBearer === "sender";
 
   const result = useMemo(() => {
     if (!resolvedMethodId || !resolvedBankId) return null;
@@ -80,6 +110,7 @@ export function FeeCalculator({ country }: { country: Country }) {
       methodId: resolvedMethodId,
       bankId: resolvedBankId,
       profile,
+      receiveCurrency: isTargetReceiveInput ? resolvedReceiveCurrency : undefined,
     });
   }, [
     direction,
@@ -88,6 +119,8 @@ export function FeeCalculator({ country }: { country: Country }) {
     resolvedMethodId,
     resolvedBankId,
     profile,
+    isTargetReceiveInput,
+    resolvedReceiveCurrency,
   ]);
 
   const banksForMethodSelect = useMemo(
@@ -95,8 +128,9 @@ export function FeeCalculator({ country }: { country: Country }) {
     [banks, resolvedMethodId],
   );
 
-  const inputLabel =
-    commissionBearer === "sender"
+  const inputLabel = isTargetReceiveInput
+    ? "Target amount user receives"
+    : commissionBearer === "sender"
       ? direction === "deposit"
         ? "Amount to land on account (USD)"
         : `Amount user receives (${inputCurrency})`
@@ -202,19 +236,61 @@ export function FeeCalculator({ country }: { country: Country }) {
           </FieldGroup>
 
           <FieldGroup label={inputLabel}>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">
-                {currencySymbol(inputCurrency)}
-              </span>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                className="w-full rounded-lg border border-slate-200 py-2.5 pl-9 pr-3 text-sm focus:border-musaffa-500 focus:outline-none focus:ring-2 focus:ring-musaffa-500/20"
-              />
-            </div>
+            {isTargetReceiveInput ? (
+              <div className="space-y-2">
+                <div className="flex gap-2">
+                  {receiveCurrencyOptions.length > 1 ? (
+                    <select
+                      value={resolvedReceiveCurrency}
+                      onChange={(e) => setReceiveCurrency(e.target.value)}
+                      className="w-24 shrink-0 rounded-lg border border-slate-200 bg-white px-2 py-2.5 text-sm font-medium text-slate-900 focus:border-musaffa-500 focus:outline-none focus:ring-2 focus:ring-musaffa-500/20"
+                      aria-label="Receive currency"
+                    >
+                      {receiveCurrencyOptions.map((ccy) => (
+                        <option key={ccy} value={ccy}>
+                          {ccy}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span className="flex w-16 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-sm font-semibold text-slate-700">
+                      {resolvedReceiveCurrency}
+                    </span>
+                  )}
+                  <div className="relative min-w-0 flex-1">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">
+                      {currencySymbol(resolvedReceiveCurrency)}
+                    </span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={amount}
+                      onChange={(e) => setAmount(e.target.value)}
+                      className="w-full rounded-lg border border-slate-200 py-2.5 pl-9 pr-3 text-sm focus:border-musaffa-500 focus:outline-none focus:ring-2 focus:ring-musaffa-500/20"
+                    />
+                  </div>
+                </div>
+                <p className="text-xs leading-relaxed text-slate-500">
+                  Enter what the user should get in their bank. The calculator
+                  works backward to the brokerage withdrawal amount.
+                </p>
+              </div>
+            ) : (
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">
+                  {currencySymbol(inputCurrency)}
+                </span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  className="w-full rounded-lg border border-slate-200 py-2.5 pl-9 pr-3 text-sm focus:border-musaffa-500 focus:outline-none focus:ring-2 focus:ring-musaffa-500/20"
+                />
+              </div>
+            )}
           </FieldGroup>
         </div>
 
@@ -229,6 +305,15 @@ export function FeeCalculator({ country }: { country: Country }) {
                   {headline}
                 </p>
               </div>
+
+              {result.withdrawAdvice && (
+                <WithdrawBufferCallout
+                  targetReceive={result.netAmount}
+                  receiveCurrency={result.inputCurrency}
+                  debitRequired={result.accountAmount}
+                  advice={result.withdrawAdvice}
+                />
+              )}
 
               <ol className="space-y-0 rounded-lg border border-slate-200 bg-white">
                 {result.steps.map((step, i) => (
@@ -361,6 +446,45 @@ function SourceLink({
   );
 }
 
+function WithdrawBufferCallout({
+  targetReceive,
+  receiveCurrency,
+  debitRequired,
+  advice,
+}: {
+  targetReceive: number;
+  receiveCurrency: string;
+  debitRequired: number;
+  advice: NonNullable<
+    ReturnType<typeof calculateProfileFees>
+  >["withdrawAdvice"];
+}) {
+  if (!advice) return null;
+
+  return (
+    <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+      <p className="font-semibold">
+        To receive exactly {formatMoney(targetReceive, receiveCurrency)}
+      </p>
+      <p className="mt-1">
+        Withdraw at least{" "}
+        <strong>{formatMoney(debitRequired, "USD")}</strong> from the brokerage
+        account (fees on top).
+      </p>
+      <p className="mt-2 text-xs leading-relaxed text-amber-900/90">
+        The FX rate at settlement may differ from this estimate — the user could
+        land at {formatMoney(Math.max(0, targetReceive - 1), receiveCurrency)}{" "}
+        or similar instead of the target. To protect an exact round amount, add{" "}
+        <strong>
+          ${advice.bufferMinUsd}–${advice.bufferMaxUsd} USD
+        </strong>{" "}
+        to the withdrawal ({formatMoney(advice.debitWithBufferMinUsd, "USD")}–
+        {formatMoney(advice.debitWithBufferMaxUsd, "USD")} total).
+      </p>
+    </div>
+  );
+}
+
 function buildHeadline(
   result: NonNullable<ReturnType<typeof calculateProfileFees>>,
   direction: TransactionDirection,
@@ -370,6 +494,9 @@ function buildHeadline(
   }
   const receiveStep = result.steps.find((s) => s.kind === "user_receives");
   const receiveCcy = receiveStep?.currency ?? "USD";
+  if (result.commissionBearer === "sender") {
+    return `Withdraw ${formatMoney(result.userTransferAmount, "USD")} → user receives ${formatMoney(result.netAmount, receiveCcy)}`;
+  }
   return `${formatMoney(result.userTransferAmount, "USD")} debited → user receives ${formatMoney(result.netAmount, receiveCcy)}`;
 }
 
